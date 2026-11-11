@@ -1,10 +1,10 @@
-import {clock,slots,localDate,validateAppointment,scheduleStats,demoAppointments} from './schedule-data.mjs';
+import {clock,slots,localDate,validateAppointment,scheduleStats,demoAppointments,parseScheduleStorage,assertAppointmentUnchanged} from './schedule-data.mjs';
 import {csv} from './data.mjs';
 const KEY='atlas-clinic-schedule-v1',SETTINGS='atlas-clinic-company-v1';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function initSchedule(){
   const $=id=>document.getElementById(id);let settings={enabled:false,company:'Your clinic',A:'Schedule A',B:'Schedule B'},appointments=[],selected=null,showDemo=new URLSearchParams(location.search).get('schedule')==='preview',storageAvailable=true;
-  const readAppointments=()=>{const value=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(value))throw Error('Invalid schedule storage. Export or restore your browser data.');return value;};
+  const readAppointments=()=>parseScheduleStorage(localStorage.getItem(KEY)||'[]');
   try{settings={...settings,...JSON.parse(localStorage.getItem(SETTINGS)||'{}')};appointments=readAppointments();}catch{storageAvailable=false;}
   $('schedule-date').value=localDate();$('schedule-enabled').checked=!!settings.enabled;
   $('company-name').value=settings.company;$('lane-a-name').value=settings.A;$('lane-b-name').value=settings.B;
@@ -33,18 +33,18 @@ export function initSchedule(){
     if(showDemo){notice('This is the sample layout. Select “Return to my schedule” to add or edit appointments.');return;}
     try{appointments=readAppointments();}catch{notice('Could not read saved appointments.');return;}
     const day=$('schedule-date').value,lane=button.dataset.lane,start=Number(button.dataset.start),entry=appointments.find(a=>a.day===day&&a.lane===lane&&a.start===start);
-    selected={day,lane,start,id:entry?.id||''};$('appointment-title').textContent=entry?'Edit appointment slot':'Book appointment slot';$('appointment-slot-label').textContent=`${day} · ${settings[lane]} · ${clock(start)}–${clock(start+30)}`;
+    selected={day,lane,start,id:entry?.id||'',original:entry?structuredClone(entry):null};$('appointment-title').textContent=entry?'Edit appointment slot':'Book appointment slot';$('appointment-slot-label').textContent=`${day} · ${settings[lane]} · ${clock(start)}–${clock(start+30)}`;
     $('patient-reference').value=entry?.patientRef||'';$('visit-label').value=entry?.visit||'';$('appointment-status').value=entry?.status||'Scheduled';$('appointment-error').textContent='';$('clear-appointment').hidden=!entry;syncBlocked();$('appointment-dialog').showModal();
   };
   function syncBlocked(){const blocked=$('appointment-status').value==='Blocked';$('patient-reference').required=!blocked;$('patient-reference').disabled=blocked;$('visit-label').placeholder=blocked?'Lunch / meeting / unavailable':'New visit / follow-up';}
   $('appointment-status').onchange=syncBlocked;$('cancel-appointment').onclick=()=>$('appointment-dialog').close();
   $('appointment-form').onsubmit=e=>{e.preventDefault();if(!selected)return;try{
     const latest=readAppointments(),existing=latest.find(a=>a.id===selected.id);
-    if(selected.id&&!existing)throw Error('This appointment was changed in another tab. Close and reopen the slot.');
-    const entry=validateAppointment({...selected,id:selected.id||crypto.randomUUID(),patientRef:$('patient-reference').value,visit:$('visit-label').value,status:$('appointment-status').value},latest,selected.id);
+    assertAppointmentUnchanged(selected.original,latest);
+    const {original,...slot}=selected;const entry=validateAppointment({...slot,id:selected.id||crypto.randomUUID(),patientRef:$('patient-reference').value,visit:$('visit-label').value,status:$('appointment-status').value},latest,selected.id);
     persist([...latest.filter(a=>a.id!==selected.id),entry]);$('appointment-dialog').close();render();notice('Appointment slot saved.');
   }catch(error){$('appointment-error').textContent=error.message;}};
-  $('clear-appointment').onclick=()=>{if(!selected?.id||!confirm('Clear this appointment slot from this browser?'))return;try{persist(readAppointments().filter(a=>a.id!==selected.id));$('appointment-dialog').close();render();notice('Appointment slot cleared.');}catch(error){$('appointment-error').textContent=error.message;}};
+  $('clear-appointment').onclick=()=>{if(!selected?.id||!confirm('Clear this appointment slot from this browser?'))return;try{const latest=readAppointments();assertAppointmentUnchanged(selected.original,latest);persist(latest.filter(a=>a.id!==selected.id));$('appointment-dialog').close();render();notice('Appointment slot cleared.');}catch(error){$('appointment-error').textContent=error.message;}};
   $('export-schedule').onclick=()=>{const day=$('schedule-date').value,rows=currentEntries().filter(a=>a.day===day).sort((a,b)=>a.start-b.start||a.lane.localeCompare(b.lane)).map(a=>({Company:settings.company,Date:a.day,Schedule:settings[a.lane],Start:clock(a.start),End:clock(a.end),'Patient reference':a.patientRef,Visit:a.visit,Status:a.status}));const columns=['Company','Date','Schedule','Start','End','Patient reference','Visit','Status'];const url=URL.createObjectURL(new Blob([csv(columns,rows)],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`${showDemo?'demo-':''}clinic-schedule-${day}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   window.addEventListener('storage',e=>{if(e.key===KEY||e.key===SETTINGS){try{appointments=readAppointments();settings={...settings,...JSON.parse(localStorage.getItem(SETTINGS)||'{}')};$('schedule-enabled').checked=!!settings.enabled;render();notice('Schedule refreshed from another browser tab.');}catch{notice('Could not refresh the schedule.');}}});
   if(!storageAvailable)notice('Browser storage is unavailable. Saved scheduling data could not be loaded.');

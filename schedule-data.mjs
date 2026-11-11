@@ -5,8 +5,26 @@ export function clock(minutes){const h=Math.floor(minutes/60);return `${h%12||12
 export function slots(){return Array.from({length:(SHIFT_END-SHIFT_START)/SLOT_MINUTES},(_,i)=>({start:SHIFT_START+i*SLOT_MINUTES,end:SHIFT_START+(i+1)*SLOT_MINUTES}));}
 export function localDate(now=new Date()){return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');}
 export function appointmentKey(day,lane,start){return `${day}|${lane}|${start}`;}
+export function parseScheduleStorage(raw){
+  let entries;try{entries=JSON.parse(raw||'[]');}catch{throw Error('Saved schedule contains invalid JSON. Export or restore your browser data.');}
+  if(!Array.isArray(entries))throw Error('Saved schedule must contain an appointment array.');
+  const ids=new Set(),keys=new Set();
+  return entries.map(entry=>{
+    const normalized=validateAppointment(entry);
+    if(typeof entry.id!=='string'||!entry.id.trim()||entry.id.length>120)throw Error('Saved appointment ID is invalid.');
+    const key=appointmentKey(entry.day,entry.lane,entry.start);
+    if(ids.has(entry.id)||keys.has(key))throw Error('Saved schedule contains duplicate appointment IDs or slots.');
+    if(entry.end!==undefined&&entry.end!==normalized.end)throw Error('Saved appointment end time is invalid.');
+    ids.add(entry.id);keys.add(key);return normalized;
+  });
+}
+export function assertAppointmentUnchanged(original,entries){
+  if(!original)return;
+  const current=entries.find(entry=>entry.id===original.id),fields=['id','day','lane','start','end','patientRef','visit','status'];
+  if(!current||fields.some(field=>current[field]!==original[field]))throw Error('This appointment changed in another tab. Close and reopen the slot.');
+}
 export function validateAppointment(entry,appointments=[],editingId=''){
-  if(!entry||date(entry.day)!==entry.day)throw Error('Choose a valid appointment date.');
+  if(!entry||typeof entry.day!=='string'||date(entry.day)!==entry.day)throw Error('Choose a valid appointment date.');
   if(!['A','B'].includes(entry.lane))throw Error('Choose schedule A or B.');
   if(!Number.isInteger(entry.start)||entry.start<SHIFT_START||entry.start>=SHIFT_END||(entry.start-SHIFT_START)%SLOT_MINUTES)throw Error('Choose a 30-minute slot between 8:00 AM and 4:30 PM.');
   if(!appointmentStatuses.includes(entry.status))throw Error('Choose a valid appointment status.');

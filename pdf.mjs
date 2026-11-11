@@ -20,7 +20,7 @@ export function textLines(items){
 export function lineFacts(text){
   const iso=text.match(/\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/),us=text.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/);
   const money=text.match(/\(?[-+]?[$€£¥]\s*\d[\d,]*(?:\.\d{2})?\)?/g)||text.match(/(?<![\d./-])\(?-?\b\d[\d,]*\.\d{2}\b\)?(?![\d./])/g)||[];
-  const status=/\b(unpaid|not paid|outstanding|past due)\b/i.test(text)?'Unpaid':/\b(paid|payment received)\b/i.test(text)?'Paid':/\b(done|completed|submitted)\b/i.test(text)?'Done':/\b(in progress|pending|to do)\b/i.test(text)?'Pending':'';
+  const status=/\b(unpaid|not(?: yet)? paid|outstanding|past due)\b/i.test(text)?'Unpaid':/\b(paid|payment received)\b/i.test(text)?'Paid':/\b(not(?: yet)? (?:done|completed|submitted)|incomplete)\b/i.test(text)?'Pending':/\b(done|completed|submitted)\b/i.test(text)?'Done':/\b(in progress|pending|to do)\b/i.test(text)?'Pending':'';
   return {Amount:money.length===1?number(money[0]):'',Date:date(iso?.[0]||us?.[0])||'',Status:status};
 }
 
